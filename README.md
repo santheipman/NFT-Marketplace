@@ -3,6 +3,7 @@
 `seller`:
 - approve ERC721ProxyTransfer contract to be the operator for his NFT.
 - create a sell order using `createOrder()`.
+
 `buyer`:
 - approve ERC20ProxyTransfer contract to be the spender for some of his tokens.
 - create a sell order using `createOrder()`.
