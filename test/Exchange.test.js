@@ -2,7 +2,6 @@ const { ethers } = require('hardhat');
 const { expect } = require('chai');
 
 describe("Exchange", function () {
-    let owner;
     let seller;
     let buyer;
 
@@ -14,7 +13,7 @@ describe("Exchange", function () {
     let verifySignatureLib;
 
     beforeEach(async function () {
-        [owner, seller, buyer] = await ethers.getSigners();
+        [_, seller, buyer] = await ethers.getSigners();
 
         const ERC20Token = await ethers.getContractFactory("ERC20Token");
         erc20Token = await ERC20Token.deploy(buyer.address, 1000);
@@ -41,28 +40,71 @@ describe("Exchange", function () {
     });
 
     it("Verify signature", async function () {
-
         // seller approves ERC721TransferProxy to spend his ERC721 (NFT)
         await erc721Token.connect(seller).approve(debugExchange.getERC721TransferProxyAddress(), 3);
 
-        const {ERC721Address, tokenID, ERC20Address, ERC20TokenAmount, isSeller, orderID} = await debugExchange.connect(seller).callStatic.createOrder(
+        // seller create sell order
+        // why use callStatic? -> https://ethereum.stackexchange.com/questions/88119/i-see-no-way-to-obtain-the-return-value-of-a-non-view-function-ethers-js
+        const sellOrder  = await debugExchange.connect(seller).callStatic.createOrder(
             erc721Token.address, 3, erc20Token.address, 100, true
         );
 
-        const messageHash = ethers.utils.solidityKeccak256(
-            ['address', 'uint256', 'address', 'uint256', 'bool', 'uint256'],
-            [ERC721Address, tokenID.toString(), ERC20Address, ERC20TokenAmount.toString(), isSeller, orderID.toString()]
+        const signature = getSignatureUsingEthersJS(seller, sellOrder);
+
+        // check if debugVerifySignatureLib.wrappedVerify can recover the right signer
+        await debugVerifySignatureLib.wrappedVerify(seller.address, getBytes(sellOrder), signature);
+    });
+
+    it("Match and excecute orders", async function () {
+        const _tokenID = 3;
+        const _price = 100;
+
+        // seller approves ERC721TransferProxy to spend his ERC721 (NFT)
+        await erc721Token.connect(seller).approve(debugExchange.getERC721TransferProxyAddress(), _tokenID);
+
+        // seller create sell order
+        const sellOrder = await debugExchange.connect(seller).callStatic.createOrder(
+            erc721Token.address, _tokenID, erc20Token.address, _price, true
         );
 
-        const orderData = ethers.utils.AbiCoder.prototype.encode(
+        // buyer approves ERC20TransferProxy to spend his ERC20
+        await erc20Token.connect(buyer).approve(debugExchange.getERC20TransferProxyAddress(), 100);
+
+        // buyer create buy order
+        const buyOrder  = await debugExchange.connect(buyer).callStatic.createOrder(
+            erc721Token.address, _tokenID, erc20Token.address, _price, false
+        );
+
+        // match orders and execute them
+        await debugExchange.wrappedMatchAndExecuteOrders(
+            seller.address, getBytes(sellOrder), getSignatureUsingEthersJS(seller, sellOrder),
+            buyer.address, getBytes(buyOrder), getSignatureUsingEthersJS(buyer, buyOrder)
+        );
+
+        // now buyer is the new owner of the sold NFT
+        expect(await erc721Token.ownerOf(_tokenID)).to.equal(buyer.address);
+
+        // seller received `_price` ERC20 tokens
+        expect(await erc20Token.balanceOf(seller.address)).to.equal(_price);
+    });
+
+    function getBytes(order) {
+        return ethers.utils.AbiCoder.prototype.encode(
             ['address', 'uint256', 'address', 'uint256', 'bool', 'uint256'],
-            [ERC721Address, tokenID.toString(), ERC20Address, ERC20TokenAmount.toString(), isSeller, orderID.toString()]
+            [order.ERC721Address, order.tokenID.toString(), order.ERC20Address, order.ERC20TokenAmount.toString(), order.isSeller, order.orderID.toString()]
+        );
+	}
+
+    async function getSignatureUsingEthersJS(signer, order) {
+        // hash the message
+        const messageHash = ethers.utils.solidityKeccak256(
+            ['address', 'uint256', 'address', 'uint256', 'bool', 'uint256'],
+            [order.ERC721Address, order.tokenID.toString(), order.ERC20Address, order.ERC20TokenAmount.toString(), order.isSeller, order.orderID.toString()]
         );
 
         // get signature produced by etherjs library
-        const signature = await seller.signMessage(ethers.utils.arrayify(messageHash));
+        const signature = await signer.signMessage(ethers.utils.arrayify(messageHash));
 
-        // check if debugVerifySignatureLib.wrappedVerify can recover the right signer
-        await debugVerifySignatureLib.wrappedVerify(seller.address, orderData, signature);
-    });
+        return signature;
+    }
 });

@@ -20,6 +20,8 @@ contract ExchangeCollection {
 }
 
 library VerifySignature {
+    // Source: https://solidity-by-example.org/signature/
+
     function getMessageHash(ExchangeCollection.Order memory _order) public pure returns (bytes32) {
         return keccak256(
             abi.encodePacked(
@@ -62,6 +64,27 @@ library VerifySignature {
 }
 
 contract Exchange is ExchangeCollection {
+
+    event CreateOrder(
+        address indexed ERC721Address,
+        uint256 indexed tokenID,
+        address ERC20Address,
+        uint256 ERC20TokenAmount,
+        bool isSeller,
+        uint256 orderID
+    );
+
+    event ExecuteOrders(
+        address indexed seller,
+        address indexed buyer,
+        uint256 tokenID,
+        address ERC721Address,
+        address ERC20Address,
+        uint256 ERC20TokenAmount,
+        uint256 sellOrderID,
+        uint256 buyOrderID
+    );
+
     // orderID => bool
     mapping(uint256 => bool) public isOrderCompleted;
     ERC20TransferProxy public erc20TransferProxy;
@@ -74,7 +97,6 @@ contract Exchange is ExchangeCollection {
         counter = 0;
     }
 
-    // createOrder: return order dict
     function createOrder(
         address _ERC721Address, uint256 _tokenID, address _ERC20Address,
         uint256 _ERC20TokenAmount, bool _isSeller) public returns (Order memory) 
@@ -88,6 +110,8 @@ contract Exchange is ExchangeCollection {
         }
 
         counter = counter + 1;
+
+        emit CreateOrder(_ERC721Address, _tokenID, _ERC20Address, _ERC20TokenAmount, _isSeller, counter);
         
         return Order(
             _ERC721Address,
@@ -99,7 +123,6 @@ contract Exchange is ExchangeCollection {
         );
     }
 
-    // buyer: approve then hit buy, input price
     function matchAndExecuteOrders(
         address seller, Order memory sellOrder, bytes memory sellerSig, 
         address buyer, Order memory buyOrder, bytes memory buyerSig) public 
@@ -123,6 +146,12 @@ contract Exchange is ExchangeCollection {
 
         erc721TransferProxy.transferERC721(sellOrder.ERC721Address, seller, buyer, sellOrder.tokenID);
         erc20TransferProxy.transferERC20(buyOrder.ERC20Address, buyer, seller, buyOrder.ERC20TokenAmount);
+
+        emit ExecuteOrders(
+            seller, buyer, buyOrder.tokenID, 
+            buyOrder.ERC721Address, buyOrder.ERC20Address, buyOrder.ERC20TokenAmount,
+            sellOrder.orderID, buyOrder.orderID
+        );
     }
 }
 
