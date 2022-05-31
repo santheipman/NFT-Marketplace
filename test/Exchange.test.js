@@ -10,6 +10,7 @@ describe("Exchange", function () {
     let erc721Token;
 
     let debugExchange;
+    let debugVerifySignatureLib;
     let verifySignatureLib;
 
     beforeEach(async function () {
@@ -24,6 +25,13 @@ describe("Exchange", function () {
         const VerifySignatureLib = await ethers.getContractFactory("VerifySignature");
         verifySignatureLib = await VerifySignatureLib.deploy();
 
+        const DebugVerifySignatureLib = await ethers.getContractFactory("DebugVerifySignature", {
+            libraries: {
+                VerifySignature: (await verifySignatureLib).address,
+            },
+        });
+        debugVerifySignatureLib = await DebugVerifySignatureLib.deploy();
+
         const DebugExchange = await ethers.getContractFactory("DebugExchange", {
             libraries: {
                 VerifySignature: (await verifySignatureLib).address,
@@ -36,28 +44,41 @@ describe("Exchange", function () {
 
         // seller approves ERC721TransferProxy to spend his ERC721 (NFT)
         await erc721Token.connect(seller).approve(debugExchange.getERC721TransferProxyAddress(), 3);
-        // const sellOrder = await debugExchange.orderToTuple(await debugExchange.connect(seller)).createOrder(
-            // erc721Token.address, 3, erc20Token.address, 100, true
-        // ));
-        const outp = await debugExchange.connect(seller).wrappedCreateOrder(
+
+        const {ERC721Address, tokenID, ERC20Address, ERC20TokenAmount, isSeller, orderID} = await debugExchange.connect(seller).callStatic.createOrder(
             erc721Token.address, 3, erc20Token.address, 100, true
         );
-        console.log(outp);
-        // console.log(sellOrder);
 
-        // console.log(            sellOrder['ERC721Address'],
-        //     sellOrder.tokenID,
-        //     sellOrder.ERC20Address,
-        //     sellOrder.ERC20TokenAmount,
-        //     sellOrder.isSeller,
-        //     sellOrder.orderID);
-        // await seller.signMessage(
-        //     sellOrder.ERC721Address,
-        //     sellOrder.tokenID,
-        //     sellOrder.ERC20Address,
-        //     sellOrder.ERC20TokenAmount,
-        //     sellOrder.isSeller,
-        //     sellOrder.orderID
-        // );
+        const myStructData = ethers.utils.AbiCoder.prototype.encode(
+            ['address', 'uint256', 'address', 'uint256', 'bool', 'uint256'],
+            [ERC721Address, tokenID.toString(), ERC20Address, ERC20TokenAmount.toString(), isSeller, orderID.toString()]
+        );
+
+        const messageHash = ethers.utils.solidityKeccak256(
+            ['address', 'uint256', 'address', 'uint256', 'bool', 'uint256'],
+            [ERC721Address, tokenID.toString(), ERC20Address, ERC20TokenAmount.toString(), isSeller, orderID.toString()]
+        );
+
+        // messageHash
+        const signature = await seller.signMessage(messageHash);
+        console.log(signature);
+
+        // stepbystep
+        const messageHash2 = await debugVerifySignatureLib.wrappedGetMessageHash(myStructData);
+        const ethSignedMessageHash = await verifySignatureLib.getEthSignedMessageHash(messageHash2);
+        const recoveredSigner = await verifySignatureLib.recoverSigner(ethSignedMessageHash, signature);
+
+        console.log("recoveredSigner %s", recoveredSigner);
+        console.log("seller.address %s", seller.address);
+
+        await debugVerifySignatureLib.wrappedVerify(seller.address, myStructData, signature);
+        
+        // "\x19Ethereum Signed Message:\n32"
+
+        // call verify
+
+        // messageHash -> 
+
+        // expect throw 
     });
 });

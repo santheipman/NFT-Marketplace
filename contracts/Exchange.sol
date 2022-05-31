@@ -20,15 +20,15 @@ contract ExchangeCollection {
 }
 
 library VerifySignature {
-    function getMessageHash(ExchangeCollection.Order memory _message) public pure returns (bytes32) {
+    function getMessageHash(ExchangeCollection.Order memory _order) public pure returns (bytes32) {
         return keccak256(
             abi.encodePacked(
-                _message.ERC721Address,
-                _message.tokenID,
-                _message.ERC20Address,
-                _message.ERC20TokenAmount,
-                _message.isSeller,
-                _message.orderID
+                _order.ERC721Address,
+                _order.tokenID,
+                _order.ERC20Address,
+                _order.ERC20TokenAmount,
+                _order.isSeller,
+                _order.orderID
             )
         );
     }
@@ -37,8 +37,8 @@ library VerifySignature {
         return keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _messageHash));
     }
 
-    function verify(address _signer, ExchangeCollection.Order memory _message, bytes memory signature) public pure {
-        bytes32 messageHash = getMessageHash(_message);
+    function verify(address _signer, ExchangeCollection.Order memory _order, bytes memory signature) public pure {
+        bytes32 messageHash = getMessageHash(_order);
         bytes32 ethSignedMessageHash = getEthSignedMessageHash(messageHash);
 
         require(recoverSigner(ethSignedMessageHash, signature) == _signer, 'incorrect signature');
@@ -89,14 +89,14 @@ contract Exchange is ExchangeCollection {
 
         counter = counter + 1;
         
-        return Order({
-                ERC721Address: _ERC721Address,
-                tokenID: _tokenID,
-                ERC20Address: _ERC20Address,
-                ERC20TokenAmount: _ERC20TokenAmount,
-                isSeller: _isSeller,
-                orderID: counter
-        });
+        return Order(
+            _ERC721Address,
+            _tokenID,
+            _ERC20Address,
+            _ERC20TokenAmount,
+            _isSeller,
+            counter
+        );
     }
 
     // buyer: approve then hit buy, input price
@@ -126,26 +126,19 @@ contract Exchange is ExchangeCollection {
     }
 }
 
+library DebugVerifySignature {
+    function wrappedGetMessageHash(bytes memory _orderBytes) public pure returns (bytes32) {
+        ExchangeCollection.Order memory order = abi.decode(_orderBytes, (ExchangeCollection.Order));
+        return VerifySignature.getMessageHash(order);
+    }
+
+    function wrappedVerify(address _signer, bytes memory _orderBytes, bytes memory signature) public pure {
+        ExchangeCollection.Order memory order = abi.decode(_orderBytes, (ExchangeCollection.Order));
+        VerifySignature.verify(_signer, order, signature);
+    }
+}
+
 contract DebugExchange is Exchange {
-
-    // function orderToTuple(Order memory order) public pure returns (address, uint256, address, uint256, bool, uint256) {
-    //     return (order.ERC721Address, order.tokenID, order.ERC20Address, 
-    //         order.ERC20TokenAmount, order.isSeller, order.orderID);
-    // }
-
-    // function tupleToOrder(
-    //     address _ERC721Address, uint256 _tokenID, address _ERC20Address, 
-    //     uint256 _ERC20TokenAmount, bool _isSeller, uint256 _orderID) public pure returns (Order memory) 
-    // {
-    //     return Order({
-    //             ERC721Address: _ERC721Address,
-    //             tokenID: _tokenID,
-    //             ERC20Address: _ERC20Address,
-    //             ERC20TokenAmount: _ERC20TokenAmount,
-    //             isSeller: _isSeller,
-    //             orderID: _orderID
-    //     });
-    // }
 
     function getERC20TransferProxyAddress() public view returns (address) {
         return address(erc20TransferProxy);
@@ -155,46 +148,17 @@ contract DebugExchange is Exchange {
         return address(erc721TransferProxy);
     }
 
-    // function wrappedMatchAndExecuteOrders(
-    //     address seller, bytes memory sellerSig, address buyer, bytes memory buyerSig,
-    //     address sERC721Address, uint256 sTokenID, address sERC20Address, uint256 sERC20TokenAmount, bool sIsSeller, uint256 sOrderID,
-    //     address bERC721Address, uint256 bTokenID, address bERC20Address, uint256 bERC20TokenAmount, bool bIsSeller, uint256 bOrderID
-    // ) public
-    // {
-    //     Order memory sellOrder = Order({
-    //             ERC721Address: sERC721Address,
-    //             tokenID: sTokenID,
-    //             ERC20Address: sERC20Address,
-    //             ERC20TokenAmount: sERC20TokenAmount,
-    //             isSeller: sIsSeller,
-    //             orderID: sOrderID
-    //     });
-    //     Order memory buyOrder = Order({
-    //             ERC721Address: bERC721Address,
-    //             tokenID: bTokenID,
-    //             ERC20Address: bERC20Address,
-    //             ERC20TokenAmount: bERC20TokenAmount,
-    //             isSeller: bIsSeller,
-    //             orderID: bOrderID
-    //     });
-
-    //     matchAndExecuteOrders(
-    //         seller, sellOrder, sellerSig, 
-    //         buyer, buyOrder, buyerSig
-    //     );
-    // }
-
-    function wrappedCreateOrder(
-        address _ERC721Address, uint256 _tokenID, address _ERC20Address,
-        uint256 _ERC20TokenAmount, bool _isSeller) public returns (address, uint256, address, uint256, bool, uint256) 
+    function wrappedMatchAndExecuteOrders(
+        address seller, bytes memory sellOrderbytes, bytes memory sellerSig, 
+        address buyer, bytes memory buyOrderbytes, bytes memory buyerSig
+    ) public
     {
-        Order memory order = createOrder(
-            _ERC721Address, _tokenID, _ERC20Address,
-            _ERC20TokenAmount, _isSeller
+        Order memory sellOrder = abi.decode(sellOrderbytes, (Order));
+        Order memory buyOrder = abi.decode(buyOrderbytes, (Order));
+
+        matchAndExecuteOrders(
+            seller, sellOrder, sellerSig, 
+            buyer, buyOrder, buyerSig
         );
-
-        return (order.ERC721Address, order.tokenID, order.ERC20Address, 
-            order.ERC20TokenAmount, order.isSeller, order.orderID);
     }
-
 }
