@@ -49,36 +49,20 @@ describe("Exchange", function () {
             erc721Token.address, 3, erc20Token.address, 100, true
         );
 
-        const myStructData = ethers.utils.AbiCoder.prototype.encode(
-            ['address', 'uint256', 'address', 'uint256', 'bool', 'uint256'],
-            [ERC721Address, tokenID.toString(), ERC20Address, ERC20TokenAmount.toString(), isSeller, orderID.toString()]
-        );
-
         const messageHash = ethers.utils.solidityKeccak256(
             ['address', 'uint256', 'address', 'uint256', 'bool', 'uint256'],
             [ERC721Address, tokenID.toString(), ERC20Address, ERC20TokenAmount.toString(), isSeller, orderID.toString()]
         );
 
-        // messageHash
-        const signature = await seller.signMessage(messageHash);
-        console.log(signature);
+        const orderData = ethers.utils.AbiCoder.prototype.encode(
+            ['address', 'uint256', 'address', 'uint256', 'bool', 'uint256'],
+            [ERC721Address, tokenID.toString(), ERC20Address, ERC20TokenAmount.toString(), isSeller, orderID.toString()]
+        );
 
-        // stepbystep
-        const messageHash2 = await debugVerifySignatureLib.wrappedGetMessageHash(myStructData);
-        const ethSignedMessageHash = await verifySignatureLib.getEthSignedMessageHash(messageHash2);
-        const recoveredSigner = await verifySignatureLib.recoverSigner(ethSignedMessageHash, signature);
+        // get signature produced by etherjs library
+        const signature = await seller.signMessage(ethers.utils.arrayify(messageHash));
 
-        console.log("recoveredSigner %s", recoveredSigner);
-        console.log("seller.address %s", seller.address);
-
-        await debugVerifySignatureLib.wrappedVerify(seller.address, myStructData, signature);
-        
-        // "\x19Ethereum Signed Message:\n32"
-
-        // call verify
-
-        // messageHash -> 
-
-        // expect throw 
+        // check if debugVerifySignatureLib.wrappedVerify can recover the right signer
+        await debugVerifySignatureLib.wrappedVerify(seller.address, orderData, signature);
     });
 });
